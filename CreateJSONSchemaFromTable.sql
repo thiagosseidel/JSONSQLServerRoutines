@@ -4,10 +4,8 @@ Summary: >
   This creates a JSON schema from a table that
   matches the JSON you will get from doing a 
   classic FOR JSON select * statemenmt on the entire table
-
 Author: phil factor
 Date: 26/10/2018
-
 Examples: >
   DECLARE @Json NVARCHAR(MAX)
   EXECUTE #CreateJSONSchemaFromTable @database='pubs', @Schema ='dbo', @table= 'authors',@JSONSchema=@json OUTPUT
@@ -39,7 +37,7 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
            (SELECT 'SELECT * FROM '+QuoteName(@database)+ '.'+ QuoteName(@Schema)+'.'+QuoteName(@table))
            SELECT 
              @properties= String_Agg('
-               "'+f.name+'": {"type":["'+Replace(type,' ','","')+'"],"sqltype":"'+sqltype+'", "columnNo":'+ Convert(VARCHAR(3), f.column_ordinal)
+               "'+f.name+'": {"type":["'+Replace(type,' ','","')+'"],"format":"'+format+'","sqltype":"'+sqltype+'", "columnNo":'+ Convert(VARCHAR(3), f.column_ordinal)
            	+', "nullable":'+Convert(CHAR(1),f.is_nullable)+', "Description":"'
                +String_Escape(Coalesce(Convert(NvARCHAR(875),EP.value),''),'json')+'"}',','),
              @NoColumns=Max(f.column_ordinal),
@@ -47,12 +45,15 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
              FROM
                ( --the basic columns we need. (the type is used more than once in the outer query) 
                SELECT 
-           	  r.name, 
-                 r.system_type_name  AS sqltype, 
+           	  	 r.name, 
+           	  	 CASE WHEN r.system_type_id IN (42, 58, 61) THEN 'date-time'
+					WHEN system_type_id = 40 THEN 'date'
+					WHEN system_type_id = 41 THEN 'time' ELSE '' END AS format,
+                 r.system_type_name  AS sqltype,
                  r.source_column,
                  r.is_nullable,r.column_ordinal,
-                 CASE WHEN r.system_type_id IN (48, 52, 56, 58, 59, 60, 62, 106, 108, 122, 127)  
-           	    THEN 'number'
+                 CASE WHEN r.system_type_id IN (48, 52, 56) THEN 'integer'
+           	     	WHEN r.system_type_id IN (59, 60, 62, 106, 108, 122, 127) THEN 'number'
                    WHEN system_type_id = 104 THEN 'boolean' ELSE 'string' END
                  + CASE WHEN r.is_nullable = 1 THEN ' null' ELSE '' END AS type,
                  Object_Id(r.source_database + '.' + r.source_schema + '.' + r.source_table) AS table_id
@@ -71,19 +72,16 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
                 Replace(
                  Replace(
                    Replace('{
-  "$id": "https://mml.uk/jsonSchema/<-schema->-<-table->.json",
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "<-table->",
-  "SQLtablename":"'+quotename(@schema)+'.'+quotename(@table)+'",
-  "SQLschema":"<-schema->",
-    "type": "array",
-    "items": {
-       "type": "object",
-	   "required": [<-Required->],
-       "maxProperties": <-MaxColumns->,
-       "minProperties": <-MinColumns->,
-       "properties":{'+@properties+'}
-        }
+	  "$id": "https://mml.uk/jsonSchema/<-schema->-<-table->.json",
+	  "$schema": "http://json-schema.org/draft-07/schema#",
+	  "title": "<-table->",
+	  "SQLtablename":"'+quotename(@schema)+'.'+quotename(@table)+'",
+	  "SQLschema":"<-schema->",
+	  "type": "object",
+	  "required": [<-Required->],
+	  "maxProperties": <-MaxColumns->,
+	  "minProperties": <-MinColumns->,
+	  "properties":{'+@properties+'}
    }', '<-minColumns->', Convert(VARCHAR(5),@NoColumns) COLLATE DATABASE_DEFAULT
            	         ) , '<-maxColumns->',Convert(VARCHAR(5),@NoColumns +1) COLLATE DATABASE_DEFAULT
            	         ) , '<-Required->',@required COLLATE DATABASE_DEFAULT
@@ -95,19 +93,3 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
            IF(IsJson(@jsonschema)=0) 
 		    RAISERROR ('invalid schema "%s"',16,1,@jsonSchema)
            IF @jsonschema IS NULL RAISERROR ('Null schema',16,1)
-GO
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
