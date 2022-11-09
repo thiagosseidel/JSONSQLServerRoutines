@@ -36,12 +36,15 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
            DECLARE @SourceCode NVARCHAR(255)=
            (SELECT 'SELECT * FROM '+QuoteName(@database)+ '.'+ QuoteName(@Schema)+'.'+QuoteName(@table))
            SELECT 
-             @properties= String_Agg('
-               "'+f.name+'": {"type":["'+Replace(type,' ','","')+'"],'+
-               (CASE WHEN format IS NOT NULL THEN '"format":"'+format+'",' ELSE '' END)+
-               '"sqltype":"'+sqltype+'", "columnNo":'+ Convert(VARCHAR(3), f.column_ordinal)
-           	+', "nullable":'+Convert(CHAR(1),f.is_nullable)+', "Description":"'
-               +String_Escape(Coalesce(Convert(NvARCHAR(875),EP.value),''),'json')+'"}',','),
+             @properties= String_Agg(
+             (CASE WHEN one_of IS NULL THEN 
+               	'"'+f.name+'": {"type":["'+Replace(type,' ','","')+'"],'+
+               	(CASE WHEN format IS NOT NULL THEN '"format":"'+format+'",' ELSE '' END)+
+               	'"sqltype":"'+sqltype+'", "columnNo":'+ Convert(VARCHAR(3), f.column_ordinal)
+           		+', "nullable":'+Convert(CHAR(1),f.is_nullable)+', "Description":"'
+               	+String_Escape(Coalesce(Convert(NvARCHAR(875),EP.value),''),'json')+'"}' ELSE
+				'"'+f.one_of+'": {"oneOf":[{"$ref": "#/definitions/'+f.one_of+'"}]'+'}'
+				END),','),
              @NoColumns=Max(f.column_ordinal),
              @required=String_Agg((CASE WHEN is_nullable = 0 THEN '"'+f.Name+'"' ELSE '""' END), ',')
              FROM
@@ -58,6 +61,9 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
            	     	WHEN r.system_type_id IN (59, 60, 62, 106, 108, 122, 127) THEN 'number'
                    WHEN system_type_id = 104 THEN 'boolean' ELSE 'string' END
                  + CASE WHEN r.is_nullable = 1 THEN ' null' ELSE '' END AS type,
+                 (select object_name(fkc.referenced_object_id) from sys.foreign_key_columns fkc
+					where fkc.parent_column_id = r.column_ordinal AND
+					fkc.parent_object_id = CAST(Object_Id(r.source_database + '.' + r.source_schema + '.' + r.source_table) AS INT)) AS one_of,
                  Object_Id(r.source_database + '.' + r.source_schema + '.' + r.source_table) AS table_id
                  FROM sys.dm_exec_describe_first_result_set
            	    (@sourcecode, NULL, 1) AS r
