@@ -37,18 +37,20 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
            (SELECT 'SELECT * FROM '+QuoteName(@database)+ '.'+ QuoteName(@Schema)+'.'+QuoteName(@table))
            SELECT 
              @properties= String_Agg('
-               "'+f.name+'": {"type":["'+Replace(type,' ','","')+'"],"format":"'+format+'","sqltype":"'+sqltype+'", "columnNo":'+ Convert(VARCHAR(3), f.column_ordinal)
+               "'+f.name+'": {"type":["'+Replace(type,' ','","')+'"],'+
+               (CASE WHEN format IS NOT NULL THEN '"format":"'+format+'",' ELSE '' END)+
+               '"sqltype":"'+sqltype+'", "columnNo":'+ Convert(VARCHAR(3), f.column_ordinal)
            	+', "nullable":'+Convert(CHAR(1),f.is_nullable)+', "Description":"'
                +String_Escape(Coalesce(Convert(NvARCHAR(875),EP.value),''),'json')+'"}',','),
              @NoColumns=Max(f.column_ordinal),
-             @required=String_Agg('"'+f.Name+'"',',') 
+             @required=String_Agg((CASE WHEN is_nullable = 0 THEN '"'+f.Name+'"' ELSE '""' END), ',')
              FROM
                ( --the basic columns we need. (the type is used more than once in the outer query) 
                SELECT 
            	  	 r.name, 
            	  	 CASE WHEN r.system_type_id IN (42, 58, 61) THEN 'date-time'
 					WHEN system_type_id = 40 THEN 'date'
-					WHEN system_type_id = 41 THEN 'time' ELSE '' END AS format,
+					WHEN system_type_id = 41 THEN 'time' ELSE NULL END AS format,
                  r.system_type_name  AS sqltype,
                  r.source_column,
                  r.is_nullable,r.column_ordinal,
@@ -66,6 +68,9 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
                 AND EP.name = 'MS_Description'
                 AND EP.class = 1
            
+           SELECT @required = REPLACE(@required, '"",', '');
+           SELECT @required = REPLACE(@required, ',""', '');
+                
            SELECT @JSONschema =
              Replace(
                Replace(
