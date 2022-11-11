@@ -136,3 +136,53 @@ DECLARE @required NVARCHAR(MAX), @NoColumns INT, @properties NVARCHAR(MAX), @def
            IF(IsJson(@jsonschema)=0) 
 		    RAISERROR ('invalid schema "%s"',16,1,@jsonSchema)
            IF @jsonschema IS NULL RAISERROR ('Null schema',16,1)
+           
+           
+GO
+
+
+/**
+  
+  DECLARE @TheJSONSchema NVARCHAR(MAX);
+  EXECUTE #CreateJSONSchemaForAllTables @jsonSchema = @TheJSONSchema OUTPUT;
+  SELECT @TheJSONSchema;
+  
+ * */
+CREATE OR ALTER PROCEDURE #CreateJSONSchemaForAllTables(@jsonSchema NVARCHAR(MAX) output)
+AS
+
+	DECLARE @Tablespec NVARCHAR(200)
+
+	DECLARE MY_CURSOR CURSOR 
+	  LOCAL STATIC READ_ONLY FORWARD_ONLY
+	FOR 
+		SELECT (DB_NAME()+'.'+schema_name(obj.schema_id)+'.'+obj.name) AS tablespec
+		FROM sys.objects obj
+		WHERE obj.type='u'
+	
+	OPEN MY_CURSOR
+	FETCH NEXT FROM MY_CURSOR INTO @Tablespec
+	WHILE @@FETCH_STATUS = 0
+	BEGIN
+		BEGIN TRY	
+			DECLARE @jsonTablespec NVARCHAR(MAX)
+		    EXECUTE #CreateJSONSchemaFromTable @Tablespec = @Tablespec,
+	  			@jsonSchema = @jsonTablespec OUTPUT;
+	  		
+	  		IF LEN(@jsonSchema) <> 0
+				SELECT @jsonSchema = CONCAT(@jsonSchema, ',');
+	  		
+	  		SELECT @jsonSchema = CONCAT(@jsonSchema, @jsonTablespec);
+		END TRY
+		BEGIN CATCH
+			PRINT 'ErrorNumber: '+CAST(ERROR_NUMBER() AS NVARCHAR(200))+' ** ErrorMessage: '+ERROR_MESSAGE()+' ** Table: '+@Tablespec;
+        END CATCH;
+		
+	  	FETCH NEXT FROM MY_CURSOR INTO @Tablespec
+	END
+	CLOSE MY_CURSOR
+	DEALLOCATE MY_CURSOR
+	
+	SELECT @jsonSchema = CONCAT('[', @jsonSchema, ']');
+	
+GO
