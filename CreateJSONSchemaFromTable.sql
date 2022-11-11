@@ -21,7 +21,7 @@ Returns: >
 --WITH ENCRYPTION|SCHEMABINDING, ...
 AS
 
-DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
+DECLARE @required NVARCHAR(MAX), @NoColumns INT, @properties NVARCHAR(MAX), @definitions NVARCHAR(MAX);
 			
            IF Coalesce(@table,@Tablespec) IS NULL
 			 OR Coalesce(@schema,@Tablespec) IS NULL
@@ -52,7 +52,16 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
 					END
 					), ','),
              @NoColumns=Max(f.column_ordinal),
-             @required=String_Agg((CASE WHEN is_nullable = 0 THEN '"'+f.Name+'"' ELSE '""' END), ',')
+             @required=String_Agg((CASE WHEN is_nullable = 0 THEN '"'+f.Name+'"' ELSE NULL END), ','),
+             @definitions=String_Agg(
+             		(CASE WHEN array_type IS NOT NULL THEN
+						'"'+f.array_type+'": {}'
+					WHEN one_of IS NOT NULL THEN
+						'"'+f.one_of+'": {}'
+					ELSE
+						NULL
+					END
+					), ',')
              FROM
                ( --the basic columns we need. (the type is used more than once in the outer query) 
 	               SELECT *
@@ -99,16 +108,13 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
                 AND EP.name = 'MS_Description'
                 AND EP.class = 1
            
-           SELECT @required = REPLACE(@required, '"",', '');
-           SELECT @required = REPLACE(@required, ',""', '');
-                
            SELECT @JSONschema =
              Replace(
                Replace(
                 Replace(
                  Replace(
                    Replace('{
-						  "$id": "https://mml.uk/jsonSchema/<-schema->-<-table->.json",
+						  "$id": "https://json-schema.com/<-schema->-<-table->.json",
 						  "$schema": "http://json-schema.org/draft-07/schema#",
 						  "title": "<-table->",
 						  "SQLtablename":"'+quotename(@schema)+'.'+quotename(@table)+'",
@@ -117,7 +123,8 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
 						  "required": [<-Required->],
 						  "maxProperties": <-MaxColumns->,
 						  "minProperties": <-MinColumns->,
-						  "properties":{'+@properties+'}
+						  "properties":{'+@properties+'},
+						  "definitions":{'+@definitions+'}
 					   }', '<-minColumns->', Convert(VARCHAR(5),@NoColumns) COLLATE DATABASE_DEFAULT
            	         ) , '<-maxColumns->',Convert(VARCHAR(5),@NoColumns +1) COLLATE DATABASE_DEFAULT
            	         ) , '<-Required->',@required COLLATE DATABASE_DEFAULT
@@ -125,7 +132,7 @@ DECLARE @required NVARCHAR(max), @NoColumns INT, @properties NVARCHAR(max);
            	     ) ,'<-table->', @table COLLATE DATABASE_DEFAULT
                   );
            
-           
+
            IF(IsJson(@jsonschema)=0) 
 		    RAISERROR ('invalid schema "%s"',16,1,@jsonSchema)
            IF @jsonschema IS NULL RAISERROR ('Null schema',16,1)
