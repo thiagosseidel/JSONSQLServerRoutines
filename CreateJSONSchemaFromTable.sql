@@ -108,6 +108,15 @@ DECLARE @required NVARCHAR(MAX), @NoColumns INT, @properties NVARCHAR(MAX), @def
                 AND EP.name = 'MS_Description'
                 AND EP.class = 1
            
+           IF @definitions IS NULL
+           		SELECT @definitions = '';
+           
+           IF @required IS NULL
+           		SELECT @required = '';
+           	
+           IF @NoColumns IS NULL
+           		SELECT @NoColumns = 0;
+
            SELECT @JSONschema =
              Replace(
                Replace(
